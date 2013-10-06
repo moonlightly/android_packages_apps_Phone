@@ -50,6 +50,7 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 
 import java.util.List;
+import com.android.phone.location.PhoneLocation;
 
 
 /**
@@ -1213,6 +1214,7 @@ public class CallCard extends LinearLayout
         mPhotoTracker.setPhotoState(ContactsAsyncHelper.ImageTracker.DISPLAY_IMAGE);
 
         // The actual strings we're going to display onscreen:
+		boolean displayNameIsNumber = false;
         String displayName;
         String displayNumber = null;
         String label = null;
@@ -1283,6 +1285,7 @@ public class CallCard extends LinearLayout
 
                     // Promote the phone number up to the "name" slot:
                     displayName = number;
+					displayNameIsNumber = true;
 
                     // ...and use the "number" slot for a geographical description
                     // string if available (but only for incoming calls.)
@@ -1290,11 +1293,14 @@ public class CallCard extends LinearLayout
                         // TODO (CallerInfoAsyncQuery cleanup): Fix the CallerInfo
                         // query to only do the geoDescription lookup in the first
                         // place for incoming calls.
-                        displayNumber = info.geoDescription;  // may be null
+                        // displayNumber = info.geoDescription;
+                        // may be null
+                        // So we use Location as Description;
+                        displayNumber = PhoneLocation.getCityFromPhone(number.replaceAll(" ", ""));
                     }
 
                     if (DBG) log("  ==>  no name; falling back to number: displayName '"
-                                 + displayName + "', displayNumber '" + displayNumber + "'");
+                                 + displayName + "', displayNumber '" + displayNumber + "'" + PhoneLocation.getCityFromPhone(number.replaceAll(" ", "")));
                 }
             } else {
                 // We do have a valid "name" in the CallerInfo.  Display that
@@ -1321,11 +1327,61 @@ public class CallCard extends LinearLayout
             displayName = PhoneUtils.getPresentationString(getContext(), presentation);
         }
 
-        if (call.isGeneric()) {
-            updateGenericInfoUi();
-        } else {
-            updateInfoUi(displayName, displayNumber, label);
+        boolean updateNameAndNumber = true;
+        // If the new info is just a phone number, check to make sure it's not less
+        // information than what's already being displayed.
+        if (displayNameIsNumber) {
+            // If the new number is the same as the number already displayed, ignore it
+            // because that means we're also already displaying a name for it.
+            // If the new number is the same as the name currently being displayed, only
+            // display if the new number is longer (ie, has formatting).
+            String visiblePhoneNumber = null;
+            if (mPhoneNumber.getVisibility() == View.VISIBLE) {
+                visiblePhoneNumber = mPhoneNumber.getText().toString();
+            }
+            if ((visiblePhoneNumber != null &&
+                 PhoneNumberUtils.compare(visiblePhoneNumber, displayName)) ||
+                (PhoneNumberUtils.compare(mName.getText().toString(), displayName) &&
+                 displayName.length() < mName.length())) {
+                if (DBG) log("chose not to update display {" + mName.getText() + ", "
+                             + visiblePhoneNumber + "} with number " + displayName);
+                updateNameAndNumber = false;
+            }
         }
+
+        if (updateNameAndNumber) {
+            if (call.isGeneric()) {
+                mName.setText(R.string.card_title_in_call);
+            } else {
+                mName.setText(displayName);
+            }
+            mName.setVisibility(View.VISIBLE);
+
+            String location = null;
+            if (displayNumber != null && !call.isGeneric()) {
+                if (mContext.getResources().getConfiguration().locale.getCountry().equals("CN") || mContext.getResources().getConfiguration().locale.getCountry().equals("TW")) {
+                    location = PhoneLocation.getCityFromPhone(displayNumber.replaceAll(" ", ""));
+                } else {
+                    location = label;
+                }
+                mPhoneNumber.setText(displayNumber);
+                mPhoneNumber.setVisibility(View.VISIBLE);
+            } else {
+                if (mContext.getResources().getConfiguration().locale.getCountry().equals("CN") || mContext.getResources().getConfiguration().locale.getCountry().equals("TW")) {
+                    location = PhoneLocation.getCityFromPhone(displayName.replaceAll(" ", ""));
+                } else {
+                    location = label;
+                }
+                mPhoneNumber.setVisibility(View.GONE);
+            }
+
+            if (location != null && !call.isGeneric()) {
+                mLabel.setText(location);
+                mLabel.setVisibility(View.VISIBLE);
+            } else {
+                mLabel.setVisibility(View.GONE);
+            }
+       }
 
         // Update mPhoto
         // if the temporary flag is set, we know we'll be getting another call after
